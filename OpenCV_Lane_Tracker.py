@@ -12,7 +12,9 @@ import math
 
 
 def roi(image):
-    polygons = np.array([[(0, 145), (140, 130), (125, 80), (5, 80)]])
+    height, width = image.shape[:2]
+    polygons = np.array(
+        [[(0, height), (width, height), (width, height*2/3), (0, height*2/3)]])
     mask = np.zeros_like(image)
     cv2.fillPoly(mask, polygons, 255)
     masked_image = cv2.bitwise_and(image, mask)
@@ -24,7 +26,6 @@ def display_lanes(image, lines):
     if lines is not None:
         for line in lines:
             x1, y1, x2, y2 = line.reshape(4)
-
             cv2.line(line_image, (x1, y1), (x2, y2), (255, 255, 0), 5)
     return line_image
 
@@ -45,68 +46,70 @@ def calculate_distance(x1, y1, x2, y2):
 # SLOPE IS OPPOSITE as Y axis is inverted!!!
 
 
+"""
+def filter_color(image):
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    lower_white = np.array([0, 0, 0])
+    upper_white = np.array([100, 100, 100])
+    mask = cv2.inRange(hsv, lower_white, upper_white)
+    res = cv2.bitwise_and(image, image, mask=mask)
+    return res"""
+
+
 def average_slope_intercept(image, lines):
     height, width = image.shape[:2]
     x_mid = width/2
-    # This is an list of lines with negative slope (ones on the left)
-
-    # This is a n list of lines with positive slope (ones on the right)
-
-    min_dist_left = 1000
-    min_dist_right = 1000
+    y_mid = height
+    left_side = []
+    right_side = []
+    min_dist_left = 10000000000
+    min_dist_right = 10000000000
     for line in lines:
         x1, y1, x2, y2 = line.reshape(4)
         parameters = np.polyfit((x1, x2), (y1, y2), 1)
         slope = parameters[0]
-        intercept = parameters[1]  # intercept is y intercept
-        if x1 < x_mid:
-            cv2.circle(image, (x1, y1), 6, (0, 0, 255), -1)
-            #cv2.imshow("result", image)
-            # cv2.waitKey(0)
-            distL = calculate_distance(x_mid, height, x1, y1)
+        intercept = parameters[1]
+        x_intercept = ((y_mid - y1)/slope) + x1
+        if x_intercept < x_mid:
+            distL = calculate_distance(x_mid, y_mid, x_intercept, y_mid)
             if distL < min_dist_left:
                 min_dist_left = distL
                 left_side = [(slope, intercept)]
-            # closest leftline"""
-            # left_side.append((slope, intercept))
         else:
-            # right_side.append(slope, intercept)
-            cv2.circle(image, (x2, y2), 6, (0, 0, 255), -1)
-            #cv2.imshow("result", image)
-            # cv2.waitKey(0)
-            distR = calculate_distance(x_mid, height, x2, y2)
+            distR = calculate_distance(x_mid, y_mid, x_intercept, y_mid)
             if distR < min_dist_right:
                 min_dist_right = distR
                 right_side = [(slope, intercept)]
-            # closest leftline
-    # print (left_side)
-    # print (right_side)
+
     left_side_avg = np.average(left_side, axis=0)
     right_side_avg = np.average(right_side, axis=0)
     left_line = make_coordinates(image, left_side_avg)
     right_line = make_coordinates(image, right_side_avg)
-    print (left_line, 'left line')
-    print (right_line, 'right line')
     return np.array([left_line, right_line])
 
 
 for root, dirs, files in os.walk("."):
     for filename in files:
-        if filename.endswith(".jpg"):
+        if filename.endswith(".png"):
             img = cv2.imread(filename)
             img_copy = np.copy(img)
-            # gray = cv2.cvtColor(img_copy, cv2.COLOR_BGR2GRAY)
-            blur = cv2.GaussianBlur(img_copy, (5, 5), 0)
-            canny_image = cv2.Canny(img_copy, 150, 150)
-            cropped_image = roi(canny_image)
+            gray = cv2.cvtColor(img_copy, cv2.COLOR_BGR2GRAY)
+            blur = cv2.GaussianBlur(gray, (5, 5), 0)
+            cropped = roi(blur)
+            canny_image = cv2.Canny(cropped, 100, 200)
+            #cv2.imshow("result", canny_image)
+            # cv2.waitKey(0)
             lines = cv2.HoughLinesP(
-                canny_image, 1, np.pi/180, 15, minLineLength=40, maxLineGap=7)
+                canny_image, 1, np.pi/180, 4, minLineLength=30, maxLineGap=10)
 
-            averaged_lines = average_slope_intercept(img_copy, lines)
-            line_image = display_lanes(img_copy, averaged_lines)
-            # plt.imshow(img)
-            # plt.show()
+            try:
+                averaged_lines = average_slope_intercept(img_copy, lines)
+                line_image = display_lanes(img_copy, averaged_lines)
+            except:
+                line_image = display_lanes(img_copy, lines)
+
             combo_image = cv2.addWeighted(img_copy, 0.8, line_image, 1, 1)
-            cv2.imshow("result", combo_image)
-            print(filename)
-            cv2.waitKey(0)
+            #cv2.imshow("result", combo_image)
+            # cv2.waitKey(0)
+            cv2.imwrite(filename + "_"+".png", combo_image)
+            #averaged_lines = average_slope_intercept(img_copy, lines)
